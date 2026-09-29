@@ -1,0 +1,2174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lane Line Detection System</title>
+    <link rel="icon" href="data:,">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 1050px;
+            width: 100%;
+        }
+
+        .header {
+            font-size: 32px;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .video-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 190px;
+            gap: 12px;
+            align-items: start;
+            margin-bottom: 20px;
+        }
+
+        .video-container {
+            position: relative;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .video-container.lane-warning::after {
+            content: '';
+            position: absolute;
+            z-index: 2;
+            inset: 0;
+            border: 5px solid #e11b22;
+            border-radius: inherit;
+            pointer-events: none;
+        }
+
+        #video, #canvas {
+            display: block;
+            margin: 0 auto;
+            border-radius: 10px;
+            width: 100%;
+            height: auto;
+        }
+
+        #canvas {
+            display: none;
+            inset: 0;
+            position: absolute;
+            z-index: 1;
+        }
+
+        .hud-overlay {
+            position: absolute;
+            z-index: 3;
+            top: 10px;
+            left: 10px;
+            display: grid;
+            gap: 5px;
+            padding: 9px 11px;
+            border: 1px solid rgba(255,255,255,0.28);
+            border-radius: 8px;
+            background: rgba(9, 15, 24, 0.76);
+            color: #fff;
+            font: 600 12px/1.35 monospace;
+            pointer-events: none;
+        }
+
+        .hud-overlay strong {
+            color: #8ff0bd;
+            font-weight: 800;
+        }
+
+        .birdseye-panel {
+            min-width: 0;
+            padding: 10px;
+            border-radius: 10px;
+            background: #111827;
+            color: #fff;
+        }
+
+        .birdseye-panel h2 {
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        #birdseyeCanvas {
+            display: block;
+            width: 100%;
+            height: auto;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            background: #000;
+        }
+
+        #driverVideo {
+            display: block;
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            object-fit: cover;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            background: #000;
+            transform: scaleX(-1);
+        }
+
+        .driver-camera-note {
+            margin-top: 5px;
+            color: #cbd5e1;
+            font-size: 10px;
+            line-height: 1.35;
+        }
+
+        .birdseye-note {
+            display: block;
+            margin-top: 7px;
+            color: #cbd5e1;
+            font-size: 10px;
+            line-height: 1.35;
+        }
+
+        #ldwWarning {
+            display: none;
+            position: absolute;
+            z-index: 4;
+            top: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 16px;
+            border-radius: 8px;
+            background: rgba(190, 0, 0, 0.94);
+            color: #fff;
+            font-weight: 800;
+            font-size: 16px;
+            text-align: center;
+            max-width: calc(100% - 20px);
+            pointer-events: none;
+        }
+
+        #ldwWarning.active {
+            display: block;
+            animation: ldw-blink 0.7s steps(2, start) infinite;
+        }
+
+        #objectWarning {
+            display: none;
+            position: absolute;
+            z-index: 4;
+            left: 50%;
+            bottom: 12px;
+            transform: translateX(-50%);
+            max-width: calc(100% - 20px);
+            padding: 9px 14px;
+            border-radius: 8px;
+            background: rgba(190, 65, 0, 0.96);
+            color: #fff;
+            font-size: 13px;
+            font-weight: 800;
+            text-align: center;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        #objectWarning.active {
+            display: block;
+            animation: object-warning-pulse 0.8s ease-in-out infinite alternate;
+        }
+
+        #drowsinessWarning {
+            display: none;
+            position: absolute;
+            z-index: 5;
+            top: 58px;
+            left: 50%;
+            transform: translateX(-50%);
+            max-width: calc(100% - 20px);
+            padding: 9px 14px;
+            border-radius: 8px;
+            background: rgba(185, 20, 20, 0.96);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 800;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        #drowsinessWarning.active {
+            display: block;
+            animation: ldw-blink 0.7s steps(2, start) infinite;
+        }
+
+        @keyframes object-warning-pulse {
+            to { opacity: 0.65; }
+        }
+
+        @keyframes ldw-blink {
+            to { visibility: hidden; }
+        }
+
+        #status {
+            text-align: center;
+            font-family: monospace;
+            margin: 20px 0;
+            padding: 12px;
+            font-size: 14px;
+            background: #f5f5f5;
+            border-radius: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .guidance-panel {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin: 14px 0;
+            padding: 14px;
+            border: 1px solid #e2e5ef;
+            border-radius: 10px;
+            background: #f8f9fc;
+        }
+
+        .guidance-item {
+            min-width: 0;
+            text-align: center;
+        }
+
+        .guidance-label {
+            display: block;
+            margin-bottom: 5px;
+            color: #666;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .guidance-value {
+            display: block;
+            color: #222;
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        #turnHint, .guidance-note {
+            grid-column: 1 / -1;
+            text-align: center;
+        }
+
+        #turnHint {
+            color: #333;
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .guidance-note {
+            color: #777;
+            font-size: 11px;
+        }
+
+        button {
+            display: block;
+            margin: 10px auto;
+            padding: 14px 28px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 200px;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .info {
+            font-size: 12px;
+            color: #666;
+            margin-top: 15px;
+            text-align: center;
+        }
+
+        .error-message {
+            background: #fee;
+            border-left: 4px solid #f44;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            color: #c00;
+            font-size: 12px;
+        }
+
+        @media (max-width: 600px) {
+            .header {
+                font-size: 24px;
+            }
+            .card {
+                padding: 15px;
+            }
+            button {
+                width: 180px;
+                padding: 12px 20px;
+            }
+            .guidance-panel {
+                grid-template-columns: 1fr;
+            }
+            .video-layout {
+                grid-template-columns: 1fr;
+            }
+            .birdseye-panel {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+                align-items: start;
+            }
+            .birdseye-panel h2,
+            .birdseye-note {
+                grid-column: 1 / -1;
+            }
+            #birdseyeCanvas {
+                max-height: 180px;
+                object-fit: contain;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="header">🚗 Left &amp; Right Lane Detection</div>
+            
+            <div class="video-layout">
+                <div class="video-container">
+                    <video id="video" width="640" height="480" autoplay muted></video>
+                    <canvas id="canvas" width="640" height="480"></canvas>
+                    <div class="hud-overlay" aria-live="polite">
+                        <div>Speed: <strong id="hudSpeed">N/A</strong></div>
+                        <div>Offset: <strong id="hudOffset">--</strong></div>
+                        <div>Curvature: <strong id="hudCurvature">--</strong></div>
+                        <div>FPS: <strong id="hudFps">0</strong></div>
+                        <div>Light: <strong id="hudLightStatus">Normal</strong></div>
+                        <div>Objects: <strong id="hudObjectStatus">YOLO idle</strong></div>
+                        <div>Driver: <strong id="hudDrowsinessStatus">Camera idle</strong></div>
+                    </div>
+                    <div id="ldwWarning" role="alert" aria-live="assertive"></div>
+                    <div id="objectWarning" role="alert" aria-live="assertive"></div>
+                    <div id="drowsinessWarning" role="alert" aria-live="assertive"></div>
+                </div>
+                <aside class="birdseye-panel" aria-label="Bird's-eye lane view">
+                    <h2>Bird's-eye view</h2>
+                    <canvas id="birdseyeCanvas" width="640" height="480"></canvas>
+                    <span class="birdseye-note">Warped lane-search mask. Speed needs a vehicle sensor.</span>
+                    <h2>Driver camera</h2>
+                    <video id="driverVideo" autoplay muted playsinline></video>
+                    <div id="driverCameraNote" class="driver-camera-note">Allow camera access and keep your face visible.</div>
+                </aside>
+            </div>
+
+            <div class="guidance-panel">
+                <div class="guidance-item">
+                    <span class="guidance-label">Lane center offset</span>
+                    <strong class="guidance-value" id="laneOffsetInfo">Waiting for lanes</strong>
+                </div>
+                <div class="guidance-item">
+                    <span class="guidance-label">Curve radius</span>
+                    <strong class="guidance-value" id="curveRadiusInfo">--</strong>
+                </div>
+                <div class="guidance-item">
+                    <span class="guidance-label">Steering suggestion</span>
+                    <strong class="guidance-value" id="steeringInfo">--</strong>
+                </div>
+                <div id="turnHint">Turn hint: waiting for both lane lines</div>
+                <div class="guidance-note">Approximate model: 3.7 m lane, 2.7 m wheelbase, 35 m visible road depth.</div>
+            </div>
+            
+            <div id="status">⏳ Initializing system...</div>
+            <button id="startBtn">▶ Start Detection</button>
+            <div class="info">
+                ℹ️ Point the camera at a road with visible lane markings<br>
+                Green lane area is safe; red means lane departure warning
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let video, canvas, ctx, startBtn, statusDiv, videoContainer, ldwWarning, drowsinessWarning;
+        let birdseyeCanvas, driverVideo, driverCameraNote, hudOffset, hudCurvature, hudFps, hudLightStatus, hudObjectStatus, hudDrowsinessStatus, objectWarningDiv;
+        let laneOffsetInfo, curveRadiusInfo, steeringInfo, turnHint;
+        let processing = false;
+        let animationId = null;
+        let stream = null;
+        let cvLoaded = false;
+        let starting = false;
+        let lastLaneStatus = '';
+        let colorThresholdBounds = null;
+        const LANE_SMOOTHING_WINDOW = 11;
+        const GUIDANCE_SMOOTHING_WINDOW = 9;
+        const GUIDANCE_HOLD_MS = 900;
+        const LDW_OFFSET_THRESHOLD = 0.35;
+        const NOMINAL_LANE_WIDTH_M = 3.7;
+        const VEHICLE_WHEELBASE_M = 2.7;
+        const ROAD_VIEW_DEPTH_M = 35;
+        const TURN_ONSET_DEVIATION_M = 0.5;
+        const MAX_PROCESSING_WIDTH = 480;
+        const MAX_PROCESSING_HEIGHT = 360;
+        const LOW_LIGHT_BRIGHTNESS_THRESHOLD = 110;
+        const ONNX_RUNTIME_VERSION = '1.27.0';
+        const YOLO_MODEL_URL = 'https://huggingface.co/webml/yolov8n/resolve/85bc8d7ab30d4065a41909d756c42819b67b4388/onnx/yolov8n.onnx';
+        const YOLO_INPUT_SIZE = 640;
+        const OBJECT_DETECTION_INTERVAL_MS = 500;
+        const OBJECT_DETECTION_MAX_AGE_MS = 1200;
+        const MEDIAPIPE_VERSION = '1.0.1';
+        const FACE_LANDMARKER_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+        const DROWSINESS_INFERENCE_INTERVAL_MS = 120;
+        const EYE_CLOSED_THRESHOLD = 0.62;
+        const YAWN_THRESHOLD = 0.62;
+        const YAWN_HOLD_MS = 900;
+        const YOLO_TARGET_CLASSES = {
+            0: { name: 'Person', warning: 'PEDESTRIAN' },
+            1: { name: 'Bicycle', warning: 'BIKE' },
+            2: { name: 'Car', warning: 'CAR' },
+            3: { name: 'Motorcycle', warning: 'BIKE' }
+        };
+        const laneCurveHistory = { left: [], right: [] };
+        const laneGuidanceHistory = [];
+        let lastValidLaneGuidance = null;
+        let lastValidLaneGuidanceAt = 0;
+        let laneHistoryWidth = 0;
+        let laneHistoryHeight = 0;
+        let warningAudioContext = null;
+        let lastWarningBeepAt = 0;
+        let lastProcessFrameTime = 0;
+        let averageFps = 0;
+        let onnxRuntimePromise = null;
+        let yoloSessionPromise = null;
+        let yoloSession = null;
+        let yoloInputCanvas = null;
+        let yoloInputContext = null;
+        let objectInferenceInFlight = false;
+        let lastObjectInferenceAt = 0;
+        let objectDetections = [];
+        let objectDetectionsAt = 0;
+        let objectDetectionGeneration = 0;
+        let objectInferenceError = false;
+        let driverStream = null;
+        let faceLandmarkerPromise = null;
+        let faceLandmarkerWorker = null;
+        let faceLandmarkerReady = false;
+        let faceInferenceInFlight = false;
+        let drowsinessSessionId = 0;
+        let drowsinessTimer = null;
+        let lastFaceInferenceAt = 0;
+        let lastFaceTimestamp = 0;
+        let lastFaceSeenAt = 0;
+        let eyesClosedSince = 0;
+        let eyesWereClosed = false;
+        let yawnStartedAt = 0;
+        let yawnIsActive = false;
+        let blinkEvents = [];
+        let yawnEvents = [];
+        let lastDrowsinessBeepAt = 0;
+        let drowsinessAlarmOscillator = null;
+        let drowsinessAlarmGain = null;
+        let claheProcessor = null;
+
+        // DOM elements
+        video = document.getElementById('video');
+        canvas = document.getElementById('canvas');
+        // OpenCV reads this canvas back into WASM every frame. Let the browser
+        // optimize the 2D context for frequent pixel reads.
+        ctx = canvas.getContext('2d', { willReadFrequently: true });
+        startBtn = document.getElementById('startBtn');
+        statusDiv = document.getElementById('status');
+        videoContainer = document.querySelector('.video-container');
+        ldwWarning = document.getElementById('ldwWarning');
+        drowsinessWarning = document.getElementById('drowsinessWarning');
+        birdseyeCanvas = document.getElementById('birdseyeCanvas');
+        driverVideo = document.getElementById('driverVideo');
+        driverCameraNote = document.getElementById('driverCameraNote');
+        hudOffset = document.getElementById('hudOffset');
+        hudCurvature = document.getElementById('hudCurvature');
+        hudFps = document.getElementById('hudFps');
+        hudLightStatus = document.getElementById('hudLightStatus');
+        hudObjectStatus = document.getElementById('hudObjectStatus');
+        hudDrowsinessStatus = document.getElementById('hudDrowsinessStatus');
+        objectWarningDiv = document.getElementById('objectWarning');
+        laneOffsetInfo = document.getElementById('laneOffsetInfo');
+        curveRadiusInfo = document.getElementById('curveRadiusInfo');
+        steeringInfo = document.getElementById('steeringInfo');
+        turnHint = document.getElementById('turnHint');
+
+        // Load OpenCV with better error handling
+        function loadOpenCV() {
+            statusDiv.innerHTML = '📥 Loading OpenCV.js (this may take a few seconds)...';
+            
+            // Check if already loaded
+            if (typeof cv !== 'undefined' && cv.Mat) {
+                cvLoaded = true;
+                statusDiv.innerHTML = '✅ OpenCV ready! Click Start Detection';
+                startBtn.disabled = false;
+                return;
+            }
+
+            const script = document.createElement('script');
+            script.src = 'https://docs.opencv.org/4.8.0/opencv.js';
+            script.onload = () => {
+                let attempts = 0;
+                const maxAttempts = 100;
+                
+                function waitForOpenCV() {
+                    attempts++;
+                    if (typeof cv !== 'undefined' && cv.Mat && cv.imread) {
+                        cvLoaded = true;
+                        statusDiv.innerHTML = '✅ OpenCV loaded! Click Start Detection';
+                        startBtn.disabled = false;
+                        console.log('OpenCV ready after', attempts, 'attempts');
+                    } else if (attempts < maxAttempts) {
+                        setTimeout(waitForOpenCV, 100);
+                    } else {
+                        statusDiv.innerHTML = '❌ OpenCV failed to load. Please refresh the page.';
+                        console.error('OpenCV timeout');
+                    }
+                }
+                
+                waitForOpenCV();
+            };
+            
+            script.onerror = () => {
+                statusDiv.innerHTML = '❌ Cannot load OpenCV. Check your internet connection and try again.';
+                console.error('Failed to load OpenCV script');
+            };
+            
+            document.head.appendChild(script);
+        }
+
+        function loadOnnxRuntime() {
+            if (window.ort && window.ort.InferenceSession) return Promise.resolve(window.ort);
+            if (onnxRuntimePromise) return onnxRuntimePromise;
+
+            onnxRuntimePromise = new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ONNX_RUNTIME_VERSION}/dist/ort.webgpu.min.js`;
+                script.onload = () => {
+                    if (window.ort && window.ort.InferenceSession) resolve(window.ort);
+                    else reject(new Error('ONNX Runtime Web did not initialize'));
+                };
+                script.onerror = () => reject(new Error('Could not load ONNX Runtime Web'));
+                document.head.appendChild(script);
+            }).catch((error) => {
+                onnxRuntimePromise = null;
+                throw error;
+            });
+            return onnxRuntimePromise;
+        }
+
+        async function ensureYoloDetector() {
+            if (yoloSession) return yoloSession;
+            if (yoloSessionPromise) return yoloSessionPromise;
+
+            yoloSessionPromise = (async () => {
+                const ort = await loadOnnxRuntime();
+                const runtimeBaseUrl = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ONNX_RUNTIME_VERSION}/dist/`;
+                ort.env.wasm.wasmPaths = runtimeBaseUrl;
+
+                let session = null;
+                if (navigator.gpu) {
+                    try {
+                        session = await ort.InferenceSession.create(YOLO_MODEL_URL, {
+                            executionProviders: ['webgpu'],
+                            graphOptimizationLevel: 'all'
+                        });
+                    } catch (gpuError) {
+                        console.warn('YOLO WebGPU unavailable; falling back to WASM:', gpuError);
+                    }
+                }
+                if (!session) {
+                    ort.env.wasm.proxy = true;
+                    session = await ort.InferenceSession.create(YOLO_MODEL_URL, {
+                        executionProviders: ['wasm'],
+                        graphOptimizationLevel: 'all'
+                    });
+                }
+
+                yoloInputCanvas = document.createElement('canvas');
+                yoloInputCanvas.width = YOLO_INPUT_SIZE;
+                yoloInputCanvas.height = YOLO_INPUT_SIZE;
+                yoloInputContext = yoloInputCanvas.getContext('2d', { willReadFrequently: true });
+                yoloSession = session;
+                hudObjectStatus.textContent = 'Ready';
+                return yoloSession;
+            })().catch((error) => {
+                yoloSessionPromise = null;
+                hudObjectStatus.textContent = 'Unavailable';
+                console.error('YOLO model load failed:', error);
+                throw error;
+            });
+
+            return yoloSessionPromise;
+        }
+
+        function makeYoloInput(sourceCanvas) {
+            const inputSize = YOLO_INPUT_SIZE;
+            const scale = Math.min(inputSize / sourceCanvas.width, inputSize / sourceCanvas.height);
+            const resizedWidth = Math.max(1, Math.round(sourceCanvas.width * scale));
+            const resizedHeight = Math.max(1, Math.round(sourceCanvas.height * scale));
+            const padLeft = Math.floor((inputSize - resizedWidth) / 2);
+            const padTop = Math.floor((inputSize - resizedHeight) / 2);
+
+            yoloInputContext.fillStyle = 'rgb(114, 114, 114)';
+            yoloInputContext.fillRect(0, 0, inputSize, inputSize);
+            yoloInputContext.drawImage(sourceCanvas, padLeft, padTop, resizedWidth, resizedHeight);
+
+            const pixels = yoloInputContext.getImageData(0, 0, inputSize, inputSize).data;
+            const planeSize = inputSize * inputSize;
+            const inputData = new Float32Array(planeSize * 3);
+            for (let pixel = 0; pixel < planeSize; pixel += 1) {
+                const sourceIndex = pixel * 4;
+                inputData[pixel] = pixels[sourceIndex] / 255;
+                inputData[planeSize + pixel] = pixels[sourceIndex + 1] / 255;
+                inputData[planeSize * 2 + pixel] = pixels[sourceIndex + 2] / 255;
+            }
+
+            return {
+                tensor: new window.ort.Tensor('float32', inputData, [1, 3, inputSize, inputSize]),
+                scale,
+                padLeft,
+                padTop,
+                sourceWidth: sourceCanvas.width,
+                sourceHeight: sourceCanvas.height
+            };
+        }
+
+        function boxIntersectionOverUnion(first, second) {
+            const intersectionWidth = Math.max(0, Math.min(first.right, second.right) - Math.max(first.left, second.left));
+            const intersectionHeight = Math.max(0, Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top));
+            const intersection = intersectionWidth * intersectionHeight;
+            const firstArea = Math.max(0, first.right - first.left) * Math.max(0, first.bottom - first.top);
+            const secondArea = Math.max(0, second.right - second.left) * Math.max(0, second.bottom - second.top);
+            const union = firstArea + secondArea - intersection;
+            return union > 0 ? intersection / union : 0;
+        }
+
+        function decodeYoloDetections(output, imageInfo) {
+            const dims = output.dims;
+            const channelsFirst = dims.length === 3 && dims[1] >= 84;
+            const channels = channelsFirst ? dims[1] : (dims.length === 3 ? dims[2] : 0);
+            const candidateCount = channelsFirst ? dims[2] : dims[1];
+            if (!channels || channels < 84 || !candidateCount) {
+                throw new Error(`Unexpected YOLO output shape: ${dims.join('×')}`);
+            }
+
+            const valueAt = (candidate, channel) => channelsFirst
+                ? output.data[channel * candidateCount + candidate]
+                : output.data[candidate * channels + channel];
+            const minimumScore = 0.35;
+            const candidates = [];
+
+            for (let candidate = 0; candidate < candidateCount; candidate += 1) {
+                let classId = -1;
+                let confidence = 0;
+                for (let id = 0; id < channels - 4; id += 1) {
+                    const score = valueAt(candidate, 4 + id);
+                    if (score > confidence) {
+                        confidence = score;
+                        classId = id;
+                    }
+                }
+                if (confidence < minimumScore || !YOLO_TARGET_CLASSES[classId]) continue;
+
+                const centerX = valueAt(candidate, 0);
+                const centerY = valueAt(candidate, 1);
+                const boxWidth = valueAt(candidate, 2);
+                const boxHeight = valueAt(candidate, 3);
+                const left = (centerX - boxWidth / 2 - imageInfo.padLeft) / imageInfo.scale;
+                const top = (centerY - boxHeight / 2 - imageInfo.padTop) / imageInfo.scale;
+                const right = (centerX + boxWidth / 2 - imageInfo.padLeft) / imageInfo.scale;
+                const bottom = (centerY + boxHeight / 2 - imageInfo.padTop) / imageInfo.scale;
+                const clipped = {
+                    classId,
+                    confidence,
+                    left: Math.max(0, Math.min(imageInfo.sourceWidth, left)),
+                    top: Math.max(0, Math.min(imageInfo.sourceHeight, top)),
+                    right: Math.max(0, Math.min(imageInfo.sourceWidth, right)),
+                    bottom: Math.max(0, Math.min(imageInfo.sourceHeight, bottom))
+                };
+                if (clipped.right > clipped.left && clipped.bottom > clipped.top) candidates.push(clipped);
+            }
+
+            candidates.sort((a, b) => b.confidence - a.confidence);
+            const selected = [];
+            for (const candidate of candidates) {
+                if (selected.some(item => item.classId === candidate.classId && boxIntersectionOverUnion(item, candidate) > 0.45)) {
+                    continue;
+                }
+                selected.push({ ...candidate, name: YOLO_TARGET_CLASSES[candidate.classId].name });
+                if (selected.length >= 30) break;
+            }
+            return selected;
+        }
+
+        async function runYoloInference(sourceCanvas) {
+            const imageInfo = makeYoloInput(sourceCanvas);
+            const inputName = yoloSession.inputNames[0];
+            const outputName = yoloSession.outputNames[0];
+            let result;
+            try {
+                result = await yoloSession.run({ [inputName]: imageInfo.tensor });
+                return decodeYoloDetections(result[outputName], imageInfo);
+            } finally {
+                if (result && result[outputName] && result[outputName].dispose) result[outputName].dispose();
+                if (imageInfo.tensor.dispose) imageInfo.tensor.dispose();
+            }
+        }
+
+        // Load the project video and wait until it can play.
+        async function startTestVideo() {
+            statusDiv.textContent = 'Loading Road_dashcam.mp4...';
+
+            try {
+                video.loop = true;
+                video.muted = true;
+                const testVideoUrl = new URL('Road_dashcam.mp4?v=3', document.baseURI).href;
+                const alreadyLoaded = video.currentSrc === testVideoUrl && video.readyState >= 2;
+                if (!alreadyLoaded) {
+                    video.srcObject = null;
+                    video.src = testVideoUrl;
+                    await new Promise((resolve, reject) => {
+                        video.onloadedmetadata = resolve;
+                        video.onerror = () => reject(new Error('Could not load Road_dashcam.mp4'));
+                        video.load();
+                    });
+                }
+
+                if (video.ended) video.currentTime = 0;
+                await video.play();
+                statusDiv.textContent = 'Test video ready. Starting detection...';
+                return true;
+            } catch (err) {
+                console.error('Test video error:', err);
+                statusDiv.textContent = `Test video error: ${err.message}`;
+                return false;
+            }
+        }
+
+        async function startDriverCamera() {
+            if (driverStream && driverStream.getTracks().some(track => track.readyState === 'live')) {
+                return true;
+            }
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                driverCameraNote.textContent = 'Driver camera needs HTTPS or localhost and camera support.';
+                return false;
+            }
+
+            driverCameraNote.textContent = 'Requesting front camera access...';
+            try {
+                driverStream = await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: {
+                        facingMode: { ideal: 'user' },
+                        width: { ideal: 320 },
+                        height: { ideal: 240 }
+                    }
+                });
+                driverVideo.srcObject = driverStream;
+                await driverVideo.play();
+                driverCameraNote.textContent = 'Keep your face centered and visible.';
+                return true;
+            } catch (error) {
+                console.warn('Driver camera is unavailable:', error);
+                driverCameraNote.textContent = error.name === 'NotAllowedError'
+                    ? 'Camera permission denied. Allow access to enable drowsiness detection.'
+                    : 'Driver camera unavailable. Lane detection will continue.';
+                driverStream = null;
+                driverVideo.srcObject = null;
+                return false;
+            }
+        }
+
+        function ensureFaceLandmarker() {
+            if (faceLandmarkerReady) return Promise.resolve();
+            if (faceLandmarkerPromise) return faceLandmarkerPromise;
+
+            faceLandmarkerPromise = new Promise((resolve, reject) => {
+                // MediaPipe's WASM loader calls importScripts internally, so
+                // this must be a classic worker rather than a module worker.
+                const worker = new Worker(new URL('./drowsiness-worker.js', location.href));
+                faceLandmarkerWorker = worker;
+                const initializationTimeout = setTimeout(() => {
+                    reject(new Error('Face Landmarker initialization timed out after 90 seconds'));
+                }, 90000);
+
+                worker.onmessage = (event) => {
+                    const message = event.data || {};
+                    if (message.type === 'ready') {
+                        clearTimeout(initializationTimeout);
+                        faceLandmarkerReady = true;
+                        resolve();
+                    } else if (message.type === 'progress') {
+                        driverCameraNote.textContent = message.step || 'Loading face model...';
+                    } else if (message.type === 'result') {
+                        faceInferenceInFlight = false;
+                        if (processing && message.sessionId === drowsinessSessionId) {
+                            handleDrowsinessResult({
+                                faceBlendshapes: Array.isArray(message.categories) && message.categories.length
+                                    ? [{ categories: message.categories }]
+                                    : []
+                            }, message.timestamp);
+                        }
+                    } else if (message.type === 'inferenceError') {
+                        faceInferenceInFlight = false;
+                        console.warn('FaceLandmarker frame failed:', message.error);
+                    } else if (message.type === 'initError') {
+                        clearTimeout(initializationTimeout);
+                        if (message.stack) console.error('MediaPipe worker initialization stack:', message.stack);
+                        reject(new Error(message.error || 'Face Landmarker worker failed to initialize'));
+                    }
+                };
+
+                worker.onerror = (event) => {
+                    clearTimeout(initializationTimeout);
+                    const error = new Error(event.message || 'Face Landmarker worker failed');
+                    if (!faceLandmarkerReady) {
+                        reject(error);
+                    } else {
+                        console.error('Face Landmarker worker stopped:', error);
+                        faceLandmarkerReady = false;
+                        faceLandmarkerWorker = null;
+                        faceLandmarkerPromise = null;
+                        faceInferenceInFlight = false;
+                        if (drowsinessTimer) {
+                            clearInterval(drowsinessTimer);
+                            drowsinessTimer = null;
+                        }
+                        hudDrowsinessStatus.textContent = 'Face worker stopped';
+                    }
+                };
+                worker.postMessage({
+                    type: 'init',
+                    packageVersion: MEDIAPIPE_VERSION,
+                    modelUrl: FACE_LANDMARKER_MODEL_URL
+                });
+            }).catch((error) => {
+                if (faceLandmarkerWorker) faceLandmarkerWorker.terminate();
+                faceLandmarkerWorker = null;
+                faceLandmarkerReady = false;
+                faceLandmarkerPromise = null;
+                throw error;
+            });
+            return faceLandmarkerPromise;
+        }
+
+        function updateDrowsinessHud(faceFound) {
+            const now = performance.now();
+            while (blinkEvents.length && now - blinkEvents[0] > 60000) blinkEvents.shift();
+            while (yawnEvents.length && now - yawnEvents[0] > 60000) yawnEvents.shift();
+            hudDrowsinessStatus.textContent = faceFound
+                ? `${blinkEvents.length} blink/min, ${yawnEvents.length} yawn/min`
+                : 'Face not found';
+        }
+
+        function setDrowsinessWarning(message) {
+            if (!message) {
+                drowsinessWarning.classList.remove('active');
+                drowsinessWarning.textContent = '';
+                return;
+            }
+            if (drowsinessWarning.textContent !== message) drowsinessWarning.textContent = message;
+            drowsinessWarning.classList.add('active');
+        }
+
+        function playDrowsinessBeep() {
+            if (!warningAudioContext || warningAudioContext.state === 'closed') return;
+            const now = performance.now();
+            if (now - lastDrowsinessBeepAt < 900) return;
+            lastDrowsinessBeepAt = now;
+
+            try {
+                if (warningAudioContext.state === 'suspended') warningAudioContext.resume().catch(() => {});
+                const oscillator = warningAudioContext.createOscillator();
+                const gain = warningAudioContext.createGain();
+                const startAt = warningAudioContext.currentTime;
+                const stopAt = startAt + 0.3;
+                oscillator.type = 'square';
+                oscillator.frequency.setValueAtTime(1040, startAt);
+                gain.gain.setValueAtTime(0.0001, startAt);
+                gain.gain.exponentialRampToValueAtTime(0.14, startAt + 0.015);
+                gain.gain.exponentialRampToValueAtTime(0.0001, stopAt);
+                oscillator.connect(gain);
+                gain.connect(warningAudioContext.destination);
+                oscillator.start(startAt);
+                oscillator.stop(stopAt);
+            } catch (error) {
+                console.warn('Could not play drowsiness alarm:', error);
+            }
+        }
+
+        function startDrowsinessAlarm() {
+            if (drowsinessAlarmOscillator || !warningAudioContext || warningAudioContext.state === 'closed') return;
+
+            try {
+                if (warningAudioContext.state === 'suspended') warningAudioContext.resume().catch(() => {});
+                const oscillator = warningAudioContext.createOscillator();
+                const gain = warningAudioContext.createGain();
+                const startAt = warningAudioContext.currentTime;
+                oscillator.type = 'square';
+                oscillator.frequency.setValueAtTime(1040, startAt);
+                gain.gain.setValueAtTime(0.0001, startAt);
+                gain.gain.exponentialRampToValueAtTime(0.12, startAt + 0.02);
+                oscillator.connect(gain);
+                gain.connect(warningAudioContext.destination);
+                oscillator.start(startAt);
+                drowsinessAlarmOscillator = oscillator;
+                drowsinessAlarmGain = gain;
+            } catch (error) {
+                console.warn('Could not start continuous drowsiness alarm:', error);
+                drowsinessAlarmOscillator = null;
+                drowsinessAlarmGain = null;
+            }
+        }
+
+        function stopDrowsinessAlarm() {
+            const oscillator = drowsinessAlarmOscillator;
+            const gain = drowsinessAlarmGain;
+            drowsinessAlarmOscillator = null;
+            drowsinessAlarmGain = null;
+            if (!oscillator) return;
+
+            try {
+                const stopAt = warningAudioContext && warningAudioContext.state !== 'closed'
+                    ? warningAudioContext.currentTime
+                    : 0;
+                if (gain && warningAudioContext && warningAudioContext.state !== 'closed') {
+                    gain.gain.cancelScheduledValues(stopAt);
+                    gain.gain.setTargetAtTime(0.0001, stopAt, 0.02);
+                    oscillator.stop(stopAt + 0.1);
+                    oscillator.onended = () => {
+                        oscillator.disconnect();
+                        gain.disconnect();
+                    };
+                } else {
+                    oscillator.stop();
+                    oscillator.disconnect();
+                    if (gain) gain.disconnect();
+                }
+            } catch (error) {
+                console.warn('Could not stop drowsiness alarm cleanly:', error);
+            }
+        }
+
+        function handleDrowsinessResult(result, callbackTimestamp) {
+            if (!processing) return;
+            callbackTimestamp = Number.isFinite(callbackTimestamp) ? callbackTimestamp : performance.now();
+            const categories = result.faceBlendshapes?.[0]?.categories || [];
+            if (!categories.length) {
+                if (!lastFaceSeenAt || callbackTimestamp - lastFaceSeenAt > 700) {
+                    eyesWereClosed = false;
+                    eyesClosedSince = 0;
+                    stopDrowsinessAlarm();
+                    yawnStartedAt = 0;
+                    yawnIsActive = false;
+                    setDrowsinessWarning('');
+                }
+                updateDrowsinessHud(false);
+                driverCameraNote.textContent = 'No face found. Center your face in the preview.';
+                return;
+            }
+
+            if (!lastFaceSeenAt || callbackTimestamp - lastFaceSeenAt > 700) {
+                eyesWereClosed = false;
+                eyesClosedSince = 0;
+                stopDrowsinessAlarm();
+                yawnStartedAt = 0;
+                yawnIsActive = false;
+                setDrowsinessWarning('');
+            }
+            lastFaceSeenAt = callbackTimestamp;
+            driverCameraNote.textContent = 'Face tracking active.';
+
+            const scores = new Map(categories.map(category => [category.categoryName, category.score]));
+            const leftBlink = scores.get('eyeBlinkLeft') || 0;
+            const rightBlink = scores.get('eyeBlinkRight') || 0;
+            const eyesClosed = (leftBlink + rightBlink) / 2 >= EYE_CLOSED_THRESHOLD;
+            const jawOpen = scores.get('jawOpen') || 0;
+
+            if (eyesClosed) {
+                if (!eyesWereClosed) {
+                    eyesWereClosed = true;
+                    eyesClosedSince = callbackTimestamp;
+                }
+                startDrowsinessAlarm();
+            } else if (eyesWereClosed) {
+                const closureDuration = callbackTimestamp - eyesClosedSince;
+                if (closureDuration >= 80 && closureDuration <= 700) blinkEvents.push(callbackTimestamp);
+                eyesWereClosed = false;
+                eyesClosedSince = 0;
+                stopDrowsinessAlarm();
+            }
+
+            if (jawOpen >= YAWN_THRESHOLD) {
+                if (!yawnStartedAt) yawnStartedAt = callbackTimestamp;
+                if (!yawnIsActive && callbackTimestamp - yawnStartedAt >= YAWN_HOLD_MS) {
+                    yawnIsActive = true;
+                    yawnEvents.push(callbackTimestamp);
+                    playDrowsinessBeep();
+                }
+            } else {
+                yawnStartedAt = 0;
+                yawnIsActive = false;
+            }
+
+            if (eyesWereClosed) {
+                const seconds = ((callbackTimestamp - eyesClosedSince) / 1000).toFixed(1);
+                setDrowsinessWarning(`DROWSINESS ALERT - EYES CLOSED ${seconds}s`);
+            } else if (yawnIsActive) {
+                setDrowsinessWarning('YAWN DETECTED - TAKE A BREAK IF TIRED');
+            } else {
+                setDrowsinessWarning('');
+            }
+            updateDrowsinessHud(true);
+        }
+
+        function queueDrowsinessFrame() {
+            if (!processing || !faceLandmarkerReady || !faceLandmarkerWorker || !driverStream || driverVideo.readyState < 2 || faceInferenceInFlight) return;
+            const now = performance.now();
+            if (now - lastFaceInferenceAt < DROWSINESS_INFERENCE_INTERVAL_MS) return;
+            lastFaceInferenceAt = now;
+            lastFaceTimestamp = Math.max(Math.floor(now), lastFaceTimestamp + 1);
+            faceInferenceInFlight = true;
+            const sessionId = drowsinessSessionId;
+            createImageBitmap(driverVideo).then((frame) => {
+                if (!processing || !faceLandmarkerWorker || sessionId !== drowsinessSessionId) {
+                    frame.close();
+                    faceInferenceInFlight = false;
+                    return;
+                }
+                faceLandmarkerWorker.postMessage({
+                    type: 'frame',
+                    frame,
+                    timestamp: lastFaceTimestamp,
+                    sessionId
+                }, [frame]);
+            }).catch((error) => {
+                faceInferenceInFlight = false;
+                console.warn('Could not capture driver camera frame:', error);
+            });
+        }
+
+        async function startDrowsinessMonitoring(cameraPromise) {
+            const cameraReady = await cameraPromise;
+            if (!cameraReady) {
+                hudDrowsinessStatus.textContent = 'Camera unavailable';
+                setDrowsinessWarning('');
+                return;
+            }
+            if (!processing && !starting) {
+                releaseDriverCamera();
+                return;
+            }
+
+            hudDrowsinessStatus.textContent = 'Loading FaceMesh...';
+            driverCameraNote.textContent = 'Loading Face Landmarker model...';
+            try {
+                await ensureFaceLandmarker();
+                if (!processing && !starting) return;
+                lastFaceInferenceAt = 0;
+                lastFaceTimestamp = 0;
+                lastFaceSeenAt = 0;
+                if (drowsinessTimer) clearInterval(drowsinessTimer);
+                drowsinessTimer = setInterval(queueDrowsinessFrame, DROWSINESS_INFERENCE_INTERVAL_MS);
+                hudDrowsinessStatus.textContent = 'Looking for face...';
+            } catch (error) {
+                console.error('Could not load MediaPipe Face Landmarker:', error);
+                releaseDriverCamera();
+                hudDrowsinessStatus.textContent = 'Face model unavailable';
+                const reason = (error && error.message ? error.message : String(error))
+                    .replace(/\s+/g, ' ')
+                    .slice(0, 100);
+                driverCameraNote.textContent = `Face model failed: ${reason}`;
+            }
+        }
+
+        function releaseDriverCamera() {
+            if (driverStream) {
+                driverStream.getTracks().forEach(track => track.stop());
+                driverStream = null;
+            }
+            driverVideo.srcObject = null;
+        }
+
+        function resetDrowsinessTracking() {
+            drowsinessSessionId += 1;
+            if (drowsinessTimer) {
+                clearInterval(drowsinessTimer);
+                drowsinessTimer = null;
+            }
+            releaseDriverCamera();
+            eyesWereClosed = false;
+            eyesClosedSince = 0;
+            stopDrowsinessAlarm();
+            yawnStartedAt = 0;
+            yawnIsActive = false;
+            lastFaceSeenAt = 0;
+            blinkEvents = [];
+            yawnEvents = [];
+            lastDrowsinessBeepAt = 0;
+            setDrowsinessWarning('');
+            hudDrowsinessStatus.textContent = 'Camera idle';
+            driverCameraNote.textContent = 'Allow camera access and keep your face visible.';
+        }
+
+        // Start webcam
+        async function startWebcam() {
+            statusDiv.innerHTML = '📷 Requesting webcam access...';
+            
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('This browser does not support webcam access. Use a current Chrome, Edge, or Firefox browser.');
+                }
+
+                const constraints = {
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: { ideal: "environment" }
+                    }
+                };
+                
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                
+                return new Promise((resolve) => {
+                    video.onloadedmetadata = async () => {
+                        try {
+                            await video.play();
+                            statusDiv.textContent = 'Webcam active. Ready for detection!';
+                            resolve(true);
+                        } catch (playError) {
+                            console.error('Video playback error:', playError);
+                            statusDiv.textContent = 'Camera started, but the video could not play.';
+                            resolve(false);
+                        }
+                    };
+                });
+            } catch(err) {
+                console.error('Webcam error:', err);
+                let errorMsg = '❌ Webcam error: ';
+                if (err.name === 'NotAllowedError') {
+                    errorMsg += 'Please allow camera access in your browser';
+                } else if (err.name === 'NotFoundError') {
+                    errorMsg += 'No camera detected on your device';
+                } else if (err.name === 'NotReadableError') {
+                    errorMsg += 'Camera is already in use by another application';
+                } else {
+                    errorMsg += err.message;
+                }
+                statusDiv.innerHTML = errorMsg;
+                return false;
+            }
+        }
+
+        // Fit x = a*y² + b*y + c to lane pixels. y is normalized to keep
+        // the least-squares calculation numerically stable in the browser.
+        function fitLaneCurve(xs, ys, frameHeight) {
+            if (xs.length < 60) return null;
+
+            let s0 = xs.length;
+            let s1 = 0;
+            let s2 = 0;
+            let s3 = 0;
+            let s4 = 0;
+            let bx0 = 0;
+            let bx1 = 0;
+            let bx2 = 0;
+
+            for (let i = 0; i < xs.length; i += 1) {
+                const y = ys[i] / frameHeight;
+                const y2 = y * y;
+                const x = xs[i];
+                s1 += y;
+                s2 += y2;
+                s3 += y2 * y;
+                s4 += y2 * y2;
+                bx0 += x;
+                bx1 += x * y;
+                bx2 += x * y2;
+            }
+
+            // Gaussian elimination for the 3×3 normal-equation system.
+            const matrix = [
+                [s4, s3, s2, bx2],
+                [s3, s2, s1, bx1],
+                [s2, s1, s0, bx0]
+            ];
+            for (let pivot = 0; pivot < 3; pivot += 1) {
+                let bestRow = pivot;
+                for (let row = pivot + 1; row < 3; row += 1) {
+                    if (Math.abs(matrix[row][pivot]) > Math.abs(matrix[bestRow][pivot])) {
+                        bestRow = row;
+                    }
+                }
+                if (Math.abs(matrix[bestRow][pivot]) < 1e-7) return null;
+                [matrix[pivot], matrix[bestRow]] = [matrix[bestRow], matrix[pivot]];
+
+                const divisor = matrix[pivot][pivot];
+                for (let column = pivot; column < 4; column += 1) {
+                    matrix[pivot][column] /= divisor;
+                }
+                for (let row = 0; row < 3; row += 1) {
+                    if (row === pivot) continue;
+                    const factor = matrix[row][pivot];
+                    for (let column = pivot; column < 4; column += 1) {
+                        matrix[row][column] -= factor * matrix[pivot][column];
+                    }
+                }
+            }
+
+            return { a: matrix[0][3], b: matrix[1][3], c: matrix[2][3] };
+        }
+
+        // Average recent curve fits. The larger window reduces lane and HUD
+        // jumps when a few frames have weak or missing markings.
+        function smoothLaneCurves(leftCurve, rightCurve, width, height) {
+            if (width !== laneHistoryWidth || height !== laneHistoryHeight) {
+                resetLaneCurveHistory();
+                laneHistoryWidth = width;
+                laneHistoryHeight = height;
+            }
+
+            const smoothOne = (history, curve) => {
+                history.push(curve ? { a: curve.a, b: curve.b, c: curve.c } : null);
+                if (history.length > LANE_SMOOTHING_WINDOW) history.shift();
+
+                let a = 0;
+                let b = 0;
+                let c = 0;
+                let validCount = 0;
+                for (const sample of history) {
+                    if (!sample) continue;
+                    a += sample.a;
+                    b += sample.b;
+                    c += sample.c;
+                    validCount += 1;
+                }
+
+                return validCount
+                    ? { a: a / validCount, b: b / validCount, c: c / validCount }
+                    : null;
+            };
+
+            return {
+                left: smoothOne(laneCurveHistory.left, leftCurve),
+                right: smoothOne(laneCurveHistory.right, rightCurve)
+            };
+        }
+
+        function resetLaneCurveHistory() {
+            laneCurveHistory.left.length = 0;
+            laneCurveHistory.right.length = 0;
+            laneGuidanceHistory.length = 0;
+            lastValidLaneGuidance = null;
+            lastValidLaneGuidanceAt = 0;
+        }
+
+        // Search a bird's-eye binary image with nine sliding windows. The
+        // output is a pair of point arrays used by the curve-fitting step.
+        function findLanePixels(binary) {
+            const width = binary.cols;
+            const height = binary.rows;
+            const data = binary.data;
+            const midpoint = Math.floor(width / 2);
+            const histogram = new Int32Array(width);
+
+            for (let y = Math.floor(height * 0.55); y < height; y += 1) {
+                const rowOffset = y * width;
+                for (let x = 0; x < width; x += 1) {
+                    if (data[rowOffset + x] > 0) histogram[x] += 1;
+                }
+            }
+
+            const peakIndex = (start, end) => {
+                let index = start;
+                for (let x = start + 1; x < end; x += 1) {
+                    if (histogram[x] > histogram[index]) index = x;
+                }
+                return histogram[index] > 0 ? index : null;
+            };
+
+            let leftCenter = peakIndex(0, midpoint);
+            let rightCenter = peakIndex(midpoint, width);
+            const left = { xs: [], ys: [] };
+            const right = { xs: [], ys: [] };
+            const windows = 9;
+            const windowHeight = Math.ceil(height / windows);
+            const margin = Math.max(35, Math.round(width * 0.08));
+            const minPixels = 25;
+
+            const collectWindow = (center, yLow, yHigh, target) => {
+                if (center === null) return center;
+                const xLow = Math.max(0, center - margin);
+                const xHigh = Math.min(width, center + margin);
+                let count = 0;
+                let xSum = 0;
+                for (let y = yLow; y < yHigh; y += 1) {
+                    const rowOffset = y * width;
+                    for (let x = xLow; x < xHigh; x += 1) {
+                        if (data[rowOffset + x] === 0) continue;
+                        target.xs.push(x);
+                        target.ys.push(y);
+                        count += 1;
+                        xSum += x;
+                    }
+                }
+                return count >= minPixels ? Math.round(xSum / count) : center;
+            };
+
+            for (let window = 0; window < windows; window += 1) {
+                const yLow = Math.max(0, height - (window + 1) * windowHeight);
+                const yHigh = height - window * windowHeight;
+                leftCenter = collectWindow(leftCenter, yLow, yHigh, left);
+                rightCenter = collectWindow(rightCenter, yLow, yHigh, right);
+            }
+
+            return { left, right };
+        }
+
+        // Map a point from bird's-eye coordinates back onto the original
+        // camera frame using the inverse perspective transform.
+        function projectPoint(matrix, x, y) {
+            const values = matrix.data64F || matrix.data32F;
+            const denominator = values[6] * x + values[7] * y + values[8];
+            if (Math.abs(denominator) < 1e-7) return null;
+            return {
+                x: (values[0] * x + values[1] * y + values[2]) / denominator,
+                y: (values[3] * x + values[4] * y + values[5]) / denominator
+            };
+        }
+
+        // Fill the road area between the two fitted lane lines. The source
+        // image is cloned before blending so pixels outside the polygon stay
+        // unchanged.
+        function drawLaneArea(frame, leftCurve, rightCurve, inverseTransform, danger) {
+            if (!leftCurve || !rightCurve) return;
+
+            const width = frame.cols;
+            const height = frame.rows;
+            const leftPoints = [];
+            const rightPoints = [];
+            const sampleStep = Math.max(6, Math.round(height / 60));
+
+            for (let y = Math.round(height * 0.98); y >= Math.round(height * 0.06); y -= sampleStep) {
+                const normalizedY = y / height;
+                const leftX = leftCurve.a * normalizedY * normalizedY + leftCurve.b * normalizedY + leftCurve.c;
+                const rightX = rightCurve.a * normalizedY * normalizedY + rightCurve.b * normalizedY + rightCurve.c;
+                if (leftX < 0 || rightX >= width || rightX <= leftX) continue;
+
+                const leftPoint = projectPoint(inverseTransform, leftX, y);
+                const rightPoint = projectPoint(inverseTransform, rightX, y);
+                if (!leftPoint || !rightPoint) continue;
+                if ([leftPoint.x, leftPoint.y, rightPoint.x, rightPoint.y].some(value => !Number.isFinite(value))) continue;
+                if (leftPoint.x < 0 || leftPoint.x >= width || rightPoint.x < 0 || rightPoint.x >= width) continue;
+                if (leftPoint.y < 0 || leftPoint.y >= height || rightPoint.y < 0 || rightPoint.y >= height) continue;
+
+                leftPoints.push([Math.round(leftPoint.x), Math.round(leftPoint.y)]);
+                rightPoints.push([Math.round(rightPoint.x), Math.round(rightPoint.y)]);
+            }
+
+            if (leftPoints.length < 3 || rightPoints.length !== leftPoints.length) return;
+
+            let overlay;
+            let blended;
+            let polygon;
+            let polygons;
+            try {
+                const vertices = leftPoints.concat(rightPoints.reverse()).flat();
+                polygon = cv.matFromArray(vertices.length / 2, 1, cv.CV_32SC2, vertices);
+                polygons = new cv.MatVector();
+                polygons.push_back(polygon);
+                overlay = frame.clone();
+                const fillColor = danger
+                    ? new cv.Scalar(255, 0, 0, 255)
+                    : new cv.Scalar(0, 220, 70, 255);
+                cv.fillPoly(overlay, polygons, fillColor, cv.LINE_AA);
+                blended = new cv.Mat();
+                cv.addWeighted(overlay, 0.28, frame, 0.72, 0, blended);
+                blended.copyTo(frame);
+            } finally {
+                if (overlay) overlay.delete();
+                if (blended) blended.delete();
+                if (polygon) polygon.delete();
+                if (polygons) polygons.delete();
+            }
+        }
+
+        function isDetectionInsideLane(detection, laneCurves, transformValues, width, height) {
+            if (!laneCurves.left || !laneCurves.right || !transformValues) return false;
+
+            const imageX = (detection.left + detection.right) / 2;
+            const imageY = detection.bottom;
+            const denominator = transformValues[6] * imageX + transformValues[7] * imageY + transformValues[8];
+            if (Math.abs(denominator) < 1e-7) return false;
+
+            const birdX = (transformValues[0] * imageX + transformValues[1] * imageY + transformValues[2]) / denominator;
+            const birdY = (transformValues[3] * imageX + transformValues[4] * imageY + transformValues[5]) / denominator;
+            if (!Number.isFinite(birdX) || !Number.isFinite(birdY) || birdY < height * 0.08 || birdY > height * 0.98) {
+                return false;
+            }
+
+            const normalizedY = birdY / height;
+            const leftX = laneCurves.left.a * normalizedY * normalizedY + laneCurves.left.b * normalizedY + laneCurves.left.c;
+            const rightX = laneCurves.right.a * normalizedY * normalizedY + laneCurves.right.b * normalizedY + laneCurves.right.c;
+            const edgeMargin = width * 0.015;
+            return rightX > leftX && birdX >= leftX + edgeMargin && birdX <= rightX - edgeMargin;
+        }
+
+        function updateObjectWarning() {
+            const inLane = objectDetections.filter(detection => detection.inLane && detection.confidence >= 0.4);
+            if (!inLane.length || performance.now() - objectDetectionsAt > OBJECT_DETECTION_MAX_AGE_MS) {
+                objectWarningDiv.classList.remove('active');
+                objectWarningDiv.textContent = '';
+                return;
+            }
+
+            const warningTypes = [...new Set(inLane.map(detection => YOLO_TARGET_CLASSES[detection.classId].warning))];
+            const message = `${warningTypes.join(' + ')} AHEAD IN YOUR LANE`;
+            if (objectWarningDiv.textContent !== message) objectWarningDiv.textContent = message;
+            objectWarningDiv.classList.add('active');
+        }
+
+        function drawDetectedObjects(frame) {
+            const now = performance.now();
+            if (!objectDetectionsAt || now - objectDetectionsAt > OBJECT_DETECTION_MAX_AGE_MS) {
+                if (objectDetections.length) {
+                    objectDetections = [];
+                    updateObjectWarning();
+                    if (yoloSession) hudObjectStatus.textContent = 'Ready';
+                }
+                return;
+            }
+
+            const width = frame.cols;
+            const height = frame.rows;
+            for (const detection of objectDetections) {
+                const left = Math.max(0, Math.round(detection.left));
+                const top = Math.max(0, Math.round(detection.top));
+                const right = Math.min(width - 1, Math.round(detection.right));
+                const bottom = Math.min(height - 1, Math.round(detection.bottom));
+                if (right <= left || bottom <= top) continue;
+
+                const boxColor = detection.inLane
+                    ? new cv.Scalar(255, 55, 55, 255)
+                    : new cv.Scalar(220, 80, 255, 255);
+                cv.rectangle(frame, new cv.Point(left, top), new cv.Point(right, bottom), boxColor, 2);
+                const label = `${detection.name} ${Math.round(detection.confidence * 100)}%`;
+                cv.putText(
+                    frame,
+                    label,
+                    new cv.Point(left, Math.max(16, top - 5)),
+                    cv.FONT_HERSHEY_SIMPLEX,
+                    0.45,
+                    boxColor,
+                    1
+                );
+            }
+        }
+
+        function queueObjectDetection(sourceCanvas, laneCurves, perspectiveTransform, width, height) {
+            if (!yoloSession || objectInferenceError || objectInferenceInFlight) return;
+            const now = performance.now();
+            if (now - lastObjectInferenceAt < OBJECT_DETECTION_INTERVAL_MS) return;
+
+            lastObjectInferenceAt = now;
+            objectInferenceInFlight = true;
+            const generation = objectDetectionGeneration;
+            const laneSnapshot = {
+                left: laneCurves.left ? { ...laneCurves.left } : null,
+                right: laneCurves.right ? { ...laneCurves.right } : null
+            };
+            const transformValues = perspectiveTransform.data64F
+                ? perspectiveTransform.data64F.slice()
+                : perspectiveTransform.data32F.slice();
+
+            runYoloInference(sourceCanvas).then((detections) => {
+                if (generation !== objectDetectionGeneration || !processing) return;
+                objectDetections = detections.map(detection => ({
+                    ...detection,
+                    inLane: isDetectionInsideLane(detection, laneSnapshot, transformValues, width, height)
+                }));
+                objectDetectionsAt = performance.now();
+                const inLaneCount = objectDetections.filter(detection => detection.inLane).length;
+                hudObjectStatus.textContent = inLaneCount
+                    ? `${objectDetections.length} · ${inLaneCount} in lane`
+                    : `${objectDetections.length} detected`;
+                updateObjectWarning();
+            }).catch((error) => {
+                if (generation !== objectDetectionGeneration) return;
+                objectInferenceError = true;
+                hudObjectStatus.textContent = 'Error';
+                console.error('YOLO inference failed:', error);
+            }).finally(() => {
+                objectInferenceInFlight = false;
+            });
+        }
+
+        function getLaneDepartureWarning(leftCurve, rightCurve, frameWidth) {
+            if (!leftCurve || !rightCurve) return null;
+
+            // Check near the bottom of the bird's-eye view, closest to the vehicle.
+            const y = 0.92;
+            const leftX = leftCurve.a * y * y + leftCurve.b * y + leftCurve.c;
+            const rightX = rightCurve.a * y * y + rightCurve.b * y + rightCurve.c;
+            const laneWidth = rightX - leftX;
+            if (!Number.isFinite(laneWidth) || laneWidth < frameWidth * 0.12 || laneWidth > frameWidth * 0.9) {
+                return null;
+            }
+
+            const laneCenterX = (leftX + rightX) / 2;
+            const vehicleCenterX = frameWidth / 2;
+            const offset = (vehicleCenterX - laneCenterX) / laneWidth;
+
+            if (offset <= -LDW_OFFSET_THRESHOLD) {
+                return { side: 'LEFT', offset };
+            }
+            if (offset >= LDW_OFFSET_THRESHOLD) {
+                return { side: 'RIGHT', offset };
+            }
+            return null;
+        }
+
+        function prepareWarningAudio() {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass) return;
+
+            try {
+                if (!warningAudioContext) warningAudioContext = new AudioContextClass();
+                if (warningAudioContext.state === 'suspended') {
+                    warningAudioContext.resume().catch(() => {});
+                }
+            } catch (err) {
+                console.warn('Audio warning is unavailable:', err);
+            }
+        }
+
+        function playWarningBeep() {
+            if (!warningAudioContext || warningAudioContext.state === 'closed') return;
+            const now = performance.now();
+            if (now - lastWarningBeepAt < 900) return;
+            lastWarningBeepAt = now;
+
+            try {
+                if (warningAudioContext.state === 'suspended') {
+                    warningAudioContext.resume().catch(() => {});
+                }
+                const oscillator = warningAudioContext.createOscillator();
+                const gain = warningAudioContext.createGain();
+                const startAt = warningAudioContext.currentTime;
+                const stopAt = startAt + 0.24;
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(880, startAt);
+                gain.gain.setValueAtTime(0.0001, startAt);
+                gain.gain.exponentialRampToValueAtTime(0.18, startAt + 0.015);
+                gain.gain.exponentialRampToValueAtTime(0.0001, stopAt);
+                oscillator.connect(gain);
+                gain.connect(warningAudioContext.destination);
+                oscillator.start(startAt);
+                oscillator.stop(stopAt);
+            } catch (err) {
+                console.warn('Could not play lane departure beep:', err);
+            }
+        }
+
+        function updateLaneDepartureWarning(warning) {
+            if (!warning) {
+                videoContainer.classList.remove('lane-warning');
+                ldwWarning.classList.remove('active');
+                ldwWarning.textContent = '';
+                lastWarningBeepAt = 0;
+                return;
+            }
+
+            videoContainer.classList.add('lane-warning');
+            const message = `⚠️ LANE DEPARTURE ${warning.side}`;
+            if (ldwWarning.textContent !== message) ldwWarning.textContent = message;
+            ldwWarning.classList.add('active');
+            playWarningBeep();
+        }
+
+        function calculateLaneGuidance(leftCurve, rightCurve, frameWidth, frameHeight) {
+            if (!leftCurve || !rightCurve) return null;
+
+            const nearY = 0.92;
+            const leftX = leftCurve.a * nearY * nearY + leftCurve.b * nearY + leftCurve.c;
+            const rightX = rightCurve.a * nearY * nearY + rightCurve.b * nearY + rightCurve.c;
+            const laneWidthPixels = rightX - leftX;
+            if (!Number.isFinite(laneWidthPixels) || laneWidthPixels < frameWidth * 0.12 || laneWidthPixels > frameWidth * 0.9) {
+                return null;
+            }
+
+            const laneCenterX = (leftX + rightX) / 2;
+            const offsetInLaneWidths = (frameWidth / 2 - laneCenterX) / laneWidthPixels;
+            const centerCurve = {
+                a: (leftCurve.a + rightCurve.a) / 2,
+                b: (leftCurve.b + rightCurve.b) / 2,
+                c: (leftCurve.c + rightCurve.c) / 2
+            };
+
+            // Convert image coordinates into approximate road meters before
+            // applying the curvature formula for x = f(y).
+            const metersPerPixelX = NOMINAL_LANE_WIDTH_M / laneWidthPixels;
+            const metersPerPixelY = ROAD_VIEW_DEPTH_M / frameHeight;
+            const slopePixels = (2 * centerCurve.a * nearY + centerCurve.b) / frameHeight;
+            const secondDerivativePixels = 2 * centerCurve.a / (frameHeight * frameHeight);
+            const slopeMeters = (metersPerPixelX / metersPerPixelY) * slopePixels;
+            const secondDerivativeMeters = (metersPerPixelX / (metersPerPixelY * metersPerPixelY)) * secondDerivativePixels;
+            const signedCurvature = secondDerivativeMeters / Math.pow(1 + slopeMeters * slopeMeters, 1.5);
+            if (!Number.isFinite(signedCurvature)) return null;
+
+            const curvatureMagnitude = Math.abs(signedCurvature);
+            const radiusMeters = curvatureMagnitude > 1e-6 ? 1 / curvatureMagnitude : Infinity;
+            const steeringAngleDegrees = Math.atan(VEHICLE_WHEELBASE_M * signedCurvature) * 180 / Math.PI;
+
+            // Find where the curve departs about half a meter from the tangent
+            // at the near end of the view, then map that row to estimated meters.
+            let turnHint = null;
+            for (let y = nearY - 0.01; y >= 0.05; y -= 0.01) {
+                const deviationMeters = Math.abs(centerCurve.a * (y - nearY) ** 2) * metersPerPixelX;
+                if (deviationMeters >= TURN_ONSET_DEVIATION_M) {
+                    turnHint = {
+                        direction: centerCurve.a < 0 ? 'LEFT' : 'RIGHT',
+                        distanceMeters: (1 - y) * ROAD_VIEW_DEPTH_M
+                    };
+                    break;
+                }
+            }
+
+            return { offsetInLaneWidths, radiusMeters, steeringAngleDegrees, turnHint };
+        }
+
+        // Average offset and signed curvature independently of the fitted
+        // curves. Hold the last stable values briefly across missed detections.
+        function smoothLaneGuidance(guidance) {
+            const now = performance.now();
+            if (guidance) {
+                const curvature = Math.tan(guidance.steeringAngleDegrees * Math.PI / 180) / VEHICLE_WHEELBASE_M;
+                laneGuidanceHistory.push({
+                    offsetInLaneWidths: guidance.offsetInLaneWidths,
+                    curvature,
+                    turnHint: guidance.turnHint
+                });
+                if (laneGuidanceHistory.length > GUIDANCE_SMOOTHING_WINDOW) laneGuidanceHistory.shift();
+                lastValidLaneGuidanceAt = now;
+            } else if (lastValidLaneGuidance && now - lastValidLaneGuidanceAt <= GUIDANCE_HOLD_MS) {
+                return lastValidLaneGuidance;
+            } else {
+                laneGuidanceHistory.length = 0;
+                lastValidLaneGuidance = null;
+                lastValidLaneGuidanceAt = 0;
+                return null;
+            }
+
+            let offsetTotal = 0;
+            let curvatureTotal = 0;
+            for (const sample of laneGuidanceHistory) {
+                offsetTotal += sample.offsetInLaneWidths;
+                curvatureTotal += sample.curvature;
+            }
+            const offsetInLaneWidths = offsetTotal / laneGuidanceHistory.length;
+            const curvature = curvatureTotal / laneGuidanceHistory.length;
+            const steeringAngleDegrees = Math.atan(VEHICLE_WHEELBASE_M * curvature) * 180 / Math.PI;
+            const radiusMeters = Math.abs(curvature) > 1e-6 ? 1 / Math.abs(curvature) : Infinity;
+            const newestSample = laneGuidanceHistory[laneGuidanceHistory.length - 1];
+
+            lastValidLaneGuidance = {
+                offsetInLaneWidths,
+                curvature,
+                radiusMeters,
+                steeringAngleDegrees,
+                turnHint: newestSample.turnHint
+            };
+            return lastValidLaneGuidance;
+        }
+
+        function updateLaneGuidance(guidance) {
+            if (!guidance) {
+                laneOffsetInfo.textContent = 'Waiting for lanes';
+                curveRadiusInfo.textContent = '--';
+                steeringInfo.textContent = '--';
+                turnHint.textContent = 'Turn hint: waiting for both lane lines';
+                hudOffset.textContent = '--';
+                hudCurvature.textContent = '--';
+                return;
+            }
+
+            const offset = guidance.offsetInLaneWidths;
+            laneOffsetInfo.textContent = Math.abs(offset) < 0.02
+                ? 'Centered'
+                : `${Math.round(Math.abs(offset) * 100)}% ${offset < 0 ? 'LEFT' : 'RIGHT'}`;
+            hudOffset.textContent = Math.abs(offset) < 0.02
+                ? 'Centered'
+                : `${Math.round(Math.abs(offset) * 100)}% ${offset < 0 ? 'left' : 'right'}`;
+            curveRadiusInfo.textContent = Number.isFinite(guidance.radiusMeters)
+                ? `${Math.round(guidance.radiusMeters)} m`
+                : 'Nearly straight';
+            const curvature = Math.tan(guidance.steeringAngleDegrees * Math.PI / 180) / VEHICLE_WHEELBASE_M;
+            hudCurvature.textContent = Math.abs(curvature) < 0.00005
+                ? '≈ 0 1/m'
+                : `${curvature < 0 ? '-' : '+'}${Math.abs(curvature).toFixed(4)} 1/m`;
+
+            const steeringDirection = guidance.steeringAngleDegrees < 0 ? 'LEFT' : 'RIGHT';
+            const steeringMagnitude = Math.abs(guidance.steeringAngleDegrees);
+            steeringInfo.textContent = steeringMagnitude < 0.1
+                ? 'Nearly straight · 0°'
+                : `${steeringDirection} · ${steeringMagnitude.toFixed(1)}° front-wheel estimate`;
+
+            if (!guidance.turnHint) {
+                turnHint.textContent = 'No clear curve ahead';
+                return;
+            }
+            const distance = Math.max(0, Math.round(guidance.turnHint.distanceMeters));
+            turnHint.textContent = distance <= 3
+                ? `${guidance.turnHint.direction} curve now`
+                : `${guidance.turnHint.direction} curve ahead · ~${distance} m`;
+        }
+
+        function updateHudFps() {
+            const now = performance.now();
+            if (lastProcessFrameTime > 0) {
+                const deltaSeconds = (now - lastProcessFrameTime) / 1000;
+                if (deltaSeconds > 0) {
+                    const currentFps = 1 / deltaSeconds;
+                    averageFps = averageFps > 0 ? averageFps * 0.8 + currentFps * 0.2 : currentFps;
+                }
+            }
+            lastProcessFrameTime = now;
+            hudFps.textContent = averageFps > 0 ? averageFps.toFixed(1) : '0';
+        }
+
+        // OpenCV.js requires inRange bounds to be Mats matching the source
+        // dimensions. Cache them so the video loop does not allocate full-frame
+        // threshold images on every processed frame.
+        function getColorThresholdBounds(width, height) {
+            if (colorThresholdBounds && colorThresholdBounds.width === width && colorThresholdBounds.height === height) {
+                return colorThresholdBounds;
+            }
+
+            if (colorThresholdBounds) {
+                colorThresholdBounds.whiteLower.delete();
+                colorThresholdBounds.whiteUpper.delete();
+                colorThresholdBounds.yellowLower.delete();
+                colorThresholdBounds.yellowUpper.delete();
+                colorThresholdBounds = null;
+            }
+
+            const createBound = (values) => new cv.Mat(
+                height,
+                width,
+                cv.CV_8UC3,
+                new cv.Scalar(values[0], values[1], values[2])
+            );
+
+            colorThresholdBounds = {
+                width,
+                height,
+                whiteLower: createBound([0, 0, 175]),
+                whiteUpper: createBound([180, 80, 255]),
+                yellowLower: createBound([15, 70, 80]),
+                yellowUpper: createBound([40, 255, 255])
+            };
+            return colorThresholdBounds;
+        }
+
+        function createGammaLookupTable(gamma) {
+            const inverseGamma = 1 / gamma;
+            return Uint8Array.from({ length: 256 }, (_, value) =>
+                Math.round(Math.pow(value / 255, inverseGamma) * 255)
+            );
+        }
+
+        function getClaheProcessor() {
+            if (!claheProcessor && typeof cv.createCLAHE === 'function') {
+                claheProcessor = cv.createCLAHE(2.0, new cv.Size(8, 8));
+            }
+            return claheProcessor;
+        }
+
+        // Some OpenCV.js builds omit the CLAHE binding. This fallback applies
+        // clipped tile histograms and bilinear interpolation directly to the
+        // grayscale Mat data so low-light processing still works on those builds.
+        function applyClaheFallback(src, dst, clipLimit = 2.0, tileColumns = 8, tileRows = 8) {
+            const width = src.cols;
+            const height = src.rows;
+            const source = src.data;
+            const output = dst.data;
+            const columns = Math.min(tileColumns, width);
+            const rows = Math.min(tileRows, height);
+            const tileMaps = new Array(columns * rows);
+            const xStarts = new Int32Array(columns + 1);
+            const yStarts = new Int32Array(rows + 1);
+
+            for (let column = 0; column <= columns; column += 1) {
+                xStarts[column] = Math.floor(column * width / columns);
+            }
+            for (let row = 0; row <= rows; row += 1) {
+                yStarts[row] = Math.floor(row * height / rows);
+            }
+
+            for (let tileY = 0; tileY < rows; tileY += 1) {
+                for (let tileX = 0; tileX < columns; tileX += 1) {
+                    const xStart = xStarts[tileX];
+                    const xEnd = xStarts[tileX + 1];
+                    const yStart = yStarts[tileY];
+                    const yEnd = yStarts[tileY + 1];
+                    const tileArea = (xEnd - xStart) * (yEnd - yStart);
+                    const histogram = new Uint32Array(256);
+
+                    for (let y = yStart; y < yEnd; y += 1) {
+                        const rowOffset = y * width;
+                        for (let x = xStart; x < xEnd; x += 1) {
+                            histogram[source[rowOffset + x]] += 1;
+                        }
+                    }
+
+                    const binClipLimit = Math.max(1, Math.floor(clipLimit * tileArea / 256));
+                    let excess = 0;
+                    for (let bin = 0; bin < 256; bin += 1) {
+                        if (histogram[bin] > binClipLimit) {
+                            excess += histogram[bin] - binClipLimit;
+                            histogram[bin] = binClipLimit;
+                        }
+                    }
+
+                    const evenShare = Math.floor(excess / 256);
+                    if (evenShare > 0) {
+                        for (let bin = 0; bin < 256; bin += 1) histogram[bin] += evenShare;
+                        excess -= evenShare * 256;
+                    }
+                    if (excess > 0) {
+                        const step = Math.max(1, Math.floor(256 / excess));
+                        for (let bin = 0; bin < 256 && excess > 0; bin += step, excess -= 1) {
+                            histogram[bin] += 1;
+                        }
+                    }
+
+                    const map = new Uint8Array(256);
+                    let cumulative = 0;
+                    for (let bin = 0; bin < 256; bin += 1) {
+                        cumulative += histogram[bin];
+                        map[bin] = Math.max(0, Math.min(255, Math.round(cumulative * 255 / tileArea)));
+                    }
+                    tileMaps[tileY * columns + tileX] = map;
+                }
+            }
+
+            const x0s = new Int32Array(width);
+            const x1s = new Int32Array(width);
+            const xWeights = new Float32Array(width);
+            for (let x = 0; x < width; x += 1) {
+                const position = x / width * columns - 0.5;
+                const base = Math.floor(position);
+                const fraction = position - base;
+                x0s[x] = Math.max(0, Math.min(columns - 1, base));
+                x1s[x] = Math.max(0, Math.min(columns - 1, base + 1));
+                xWeights[x] = base < 0 || base >= columns - 1 ? 0 : fraction;
+            }
+
+            for (let y = 0; y < height; y += 1) {
+                const position = y / height * rows - 0.5;
+                const base = Math.floor(position);
+                const fraction = position - base;
+                const y0 = Math.max(0, Math.min(rows - 1, base));
+                const y1 = Math.max(0, Math.min(rows - 1, base + 1));
+                const yWeight = base < 0 || base >= rows - 1 ? 0 : fraction;
+                const rowOffset = y * width;
+
+                for (let x = 0; x < width; x += 1) {
+                    const x0 = x0s[x];
+                    const x1 = x1s[x];
+                    const top0 = tileMaps[y0 * columns + x0][source[rowOffset + x]];
+                    const top1 = tileMaps[y0 * columns + x1][source[rowOffset + x]];
+                    const bottom0 = tileMaps[y1 * columns + x0][source[rowOffset + x]];
+                    const bottom1 = tileMaps[y1 * columns + x1][source[rowOffset + x]];
+                    const xWeight = xWeights[x];
+                    const top = top0 * (1 - xWeight) + top1 * xWeight;
+                    const bottom = bottom0 * (1 - xWeight) + bottom1 * xWeight;
+                    output[rowOffset + x] = Math.round(top * (1 - yWeight) + bottom * yWeight);
+                }
+            }
+        }
+
+        // Process frame for lane detection
+        function processFrame() {
+            if (!processing || !cvLoaded) return;
+            if ((!video.srcObject && !video.src) || video.paused) {
+                animationId = requestAnimationFrame(processFrame);
+                return;
+            }
+            updateHudFps();
+            let processingStage = 'prepare video frame';
+
+            try {
+                // Ensure video has valid dimensions
+                if (video.videoWidth === 0 || video.videoHeight === 0) {
+                    if (processing) {
+                        animationId = requestAnimationFrame(processFrame);
+                    }
+                    return;
+                }
+                
+                // Process a smaller copy of high-resolution video to reduce
+                // OpenCV work per frame while preserving the original aspect ratio.
+                const processingScale = Math.min(
+                    1,
+                    MAX_PROCESSING_WIDTH / video.videoWidth,
+                    MAX_PROCESSING_HEIGHT / video.videoHeight
+                );
+                const processingWidth = Math.max(1, Math.round(video.videoWidth * processingScale));
+                const processingHeight = Math.max(1, Math.round(video.videoHeight * processingScale));
+                if (canvas.width !== processingWidth || canvas.height !== processingHeight) {
+                    canvas.width = processingWidth;
+                    canvas.height = processingHeight;
+                }
+                
+                // Draw current video frame to canvas
+                processingStage = 'draw video frame';
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // OpenCV processing pipeline
+                processingStage = 'read canvas with cv.imread';
+                const src = cv.imread(canvas);
+                const gray = new cv.Mat();
+                const originalGray = new cv.Mat();
+                const blurred = new cv.Mat();
+                const edges = new cv.Mat();
+                let rgb;
+                let hsv;
+                let gammaLookup;
+                let equalizedGray;
+                let claheGray;
+                let whiteMask;
+                let yellowMask;
+                let colorMask;
+                let candidateMask;
+                let cleanedMask;
+                let roadMask;
+                let laneSearchView;
+                let birdView;
+                let kernel;
+                let roiVertices;
+                let roi;
+                let sourcePoints;
+                let destinationPoints;
+                let perspectiveTransform;
+                let inversePerspectiveTransform;
+                
+                try {
+                    const width = src.cols;
+                    const height = src.rows;
+
+                    // Step 1: Measure brightness, then enhance only dark
+                    // frames so daylight colors and detection stay unchanged.
+                    processingStage = 'measure frame brightness';
+                    rgb = new cv.Mat();
+                    cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB);
+                    cv.cvtColor(rgb, originalGray, cv.COLOR_RGB2GRAY);
+                    const brightness = cv.mean(originalGray)[0];
+                    const lowLight = brightness < LOW_LIGHT_BRIGHTNESS_THRESHOLD;
+                    let laneColorFrame = rgb;
+
+                    if (lowLight) {
+                        const gamma = Math.min(
+                            2.2,
+                            1.15 + (LOW_LIGHT_BRIGHTNESS_THRESHOLD - brightness) / 80
+                        );
+                        processingStage = 'apply low-light gamma correction';
+                        gammaLookup = createGammaLookupTable(gamma);
+                        const rgbPixels = rgb.data;
+                        for (let pixel = 0; pixel < rgbPixels.length; pixel += 1) {
+                            rgbPixels[pixel] = gammaLookup[rgbPixels[pixel]];
+                        }
+                        // Display the gamma-brightened frame as well as using
+                        // it for color segmentation; keep the source unchanged
+                        // during normal/daylight conditions.
+                        cv.cvtColor(rgb, src, cv.COLOR_RGB2RGBA);
+                        laneColorFrame = rgb;
+
+                        processingStage = 'apply low-light histogram equalization';
+                        cv.cvtColor(rgb, gray, cv.COLOR_RGB2GRAY);
+                        equalizedGray = new cv.Mat();
+                        claheGray = new cv.Mat(height, width, cv.CV_8UC1);
+                        cv.equalizeHist(gray, equalizedGray);
+                        const clahe = getClaheProcessor();
+                        if (clahe) {
+                            clahe.apply(gray, claheGray);
+                        } else {
+                            applyClaheFallback(gray, claheGray);
+                        }
+                        // Blend global equalization with local CLAHE to lift
+                        // dark details without amplifying noise too strongly.
+                        cv.addWeighted(equalizedGray, 0.4, claheGray, 0.6, 0, gray);
+                    } else {
+                        originalGray.copyTo(gray);
+                    }
+
+                    const lightStatus = lowLight ? 'Enhanced' : 'Normal';
+                    if (hudLightStatus.textContent !== lightStatus) {
+                        hudLightStatus.textContent = lightStatus;
+                    }
+
+                    // Step 2: Add conventional edge information from the
+                    // enhanced grayscale image when low light is detected.
+                    processingStage = 'blur grayscale frame';
+                    cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+                    processingStage = 'detect edges';
+                    cv.Canny(blurred, edges, 50, 150);
+
+                    // Step 3: Segment white and yellow markings in HSV. This
+                    // keeps visible lane paint even when its edge is weak.
+                    processingStage = 'convert frame to HSV';
+                    hsv = new cv.Mat();
+                    cv.cvtColor(laneColorFrame, hsv, cv.COLOR_RGB2HSV);
+                    whiteMask = new cv.Mat();
+                    yellowMask = new cv.Mat();
+                    colorMask = new cv.Mat();
+                    const thresholdBounds = getColorThresholdBounds(width, height);
+                    processingStage = 'segment white lane markings';
+                    cv.inRange(hsv, thresholdBounds.whiteLower, thresholdBounds.whiteUpper, whiteMask);
+                    processingStage = 'segment yellow lane markings';
+                    cv.inRange(hsv, thresholdBounds.yellowLower, thresholdBounds.yellowUpper, yellowMask);
+                    processingStage = 'combine lane color masks';
+                    cv.bitwise_or(whiteMask, yellowMask, colorMask);
+
+                    // Blend color and edge candidates, then close small gaps
+                    // in dashed or worn lane markings.
+                    candidateMask = new cv.Mat();
+                    cleanedMask = new cv.Mat();
+                    processingStage = 'clean candidate mask';
+                    kernel = cv.Mat.ones(3, 3, cv.CV_8U);
+                    cv.bitwise_or(colorMask, edges, candidateMask);
+                    cv.morphologyEx(candidateMask, cleanedMask, cv.MORPH_CLOSE, kernel);
+
+                    // Step 3: Use the road trapezoid only to define the
+                    // perspective mapping. The search ROI is applied later
+                    // as a rectangle in bird's-eye coordinates.
+                    processingStage = 'create perspective transform';
+                    sourcePoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
+                        width * 0.10, height,
+                        width * 0.44, height * 0.60,
+                        width * 0.56, height * 0.60,
+                        width * 0.90, height
+                    ]);
+                    destinationPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
+                        width * 0.20, height,
+                        width * 0.20, 0,
+                        width * 0.80, 0,
+                        width * 0.80, height
+                    ]);
+                    perspectiveTransform = cv.getPerspectiveTransform(sourcePoints, destinationPoints);
+                    inversePerspectiveTransform = cv.getPerspectiveTransform(destinationPoints, sourcePoints);
+                    birdView = new cv.Mat();
+                    processingStage = 'warp candidate mask to bird view';
+                    cv.warpPerspective(
+                        cleanedMask,
+                        birdView,
+                        perspectiveTransform,
+                        new cv.Size(width, height),
+                        cv.INTER_NEAREST
+                    );
+
+                    // Step 4: Keep a fixed, resolution-scaled rectangle in
+                    // the transformed road corridor and discard its borders.
+                    const roiLeft = Math.round(width * 0.12);
+                    const roiRight = Math.round(width * 0.88);
+                    const roiTop = Math.round(height * 0.04);
+                    const roiBottom = height - 1;
+                    processingStage = 'create bird-view rectangle ROI';
+                    roadMask = cv.Mat.zeros(height, width, cv.CV_8UC1);
+                    roiVertices = cv.matFromArray(4, 1, cv.CV_32SC2, [
+                        roiLeft, roiTop,
+                        roiRight, roiTop,
+                        roiRight, roiBottom,
+                        roiLeft, roiBottom
+                    ]);
+                    roi = new cv.MatVector();
+                    roi.push_back(roiVertices);
+                    cv.fillPoly(roadMask, roi, new cv.Scalar(255));
+                    laneSearchView = new cv.Mat();
+                    processingStage = 'apply bird-view rectangle ROI';
+                    cv.bitwise_and(birdView, roadMask, laneSearchView);
+
+                    // Step 5: Sliding windows collect pixels for each lane;
+                    // a second-degree fit represents road curves.
+                    processingStage = 'find lane pixels';
+                    const lanePixels = findLanePixels(laneSearchView);
+                    const rawLeftCurve = fitLaneCurve(lanePixels.left.xs, lanePixels.left.ys, height);
+                    const rawRightCurve = fitLaneCurve(lanePixels.right.xs, lanePixels.right.ys, height);
+                    const smoothedCurves = smoothLaneCurves(rawLeftCurve, rawRightCurve, width, height);
+                    const rawLaneGuidance = calculateLaneGuidance(
+                        smoothedCurves.left,
+                        smoothedCurves.right,
+                        width,
+                        height
+                    );
+                    const laneGuidance = smoothLaneGuidance(rawLaneGuidance);
+                    updateLaneGuidance(laneGuidance);
+                    const laneWarning = getLaneDepartureWarning(
+                        smoothedCurves.left,
+                        smoothedCurves.right,
+                        width
+                    );
+                    updateLaneDepartureWarning(laneWarning);
+                    processingStage = 'draw filled lane area';
+                    drawLaneArea(
+                        src,
+                        smoothedCurves.left,
+                        smoothedCurves.right,
+                        inversePerspectiveTransform,
+                        Boolean(laneWarning)
+                    );
+                    processingStage = 'draw and classify detected objects';
+                    drawDetectedObjects(src);
+                    queueObjectDetection(canvas, smoothedCurves, perspectiveTransform, width, height);
+                    const leftDetected = Boolean(smoothedCurves.left);
+                    const rightDetected = Boolean(smoothedCurves.right);
+
+                    let newStatus = 'No lane markings found - point the camera at a road';
+                    if (leftDetected && rightDetected) {
+                        newStatus = 'Left and Right curved lanes detected';
+                    } else if (leftDetected) {
+                        newStatus = 'Left lane detected - searching for right lane';
+ 
